@@ -53,7 +53,16 @@ def main():
 
     threading.Thread(target=receive_messages,
                      args=(client,), daemon=True).start()  # daemon=true para facilitar saida do programa
-    send_messages(client, username)
+
+    while True:
+        try:
+            entrada = input()
+            if entrada.lower() == "sair":
+                client.close()
+                break
+            client.send(entrada.encode('utf-8'))
+        except:
+            break
 
 
 if __name__ == "__main__":
