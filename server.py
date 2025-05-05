@@ -17,6 +17,7 @@
 import socket
 import threading
 import time
+import random
 
 # Tabuleiro
 BOARD_SIZE = 5
@@ -29,10 +30,10 @@ client_names = {}
 pecas_restantes = {PLAYER_SYMBOLS[0]: 12, PLAYER_SYMBOLS[1]: 12}
 jogador_atual = 0  # índice no PLAYER_SYMBOLS
 tabuleiro = [[EMPTY for _ in range(BOARD_SIZE)] for _ in range(BOARD_SIZE)]
+jogo_encerrado = False
+
 
 # Logger
-
-
 def log_evento(msg):
     timestamp = time.strftime("[%Y-%m-%d %H:%M:%S]")
     with open("log_servidor.txt", "a") as log:
@@ -101,6 +102,19 @@ def verificar_capturas(jogador, x, y):
         broadcast(placar.encode())
 
 
+def tem_movimentos_possiveis(simbolo):
+    for x in range(BOARD_SIZE):
+        for y in range(BOARD_SIZE):
+            if tabuleiro[x][y] != simbolo:
+                continue
+            for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < BOARD_SIZE and 0 <= ny < BOARD_SIZE:
+                    if tabuleiro[nx][ny] == EMPTY:
+                        return True
+    return False
+
+
 def broadcast(msg):
     for c in clients:
         try:
@@ -111,10 +125,17 @@ def broadcast(msg):
 
 def remove_client(client):
     if client in clients:
+        index = clients.index(client)
+        simbolo_desistente = PLAYER_SYMBOLS[index]
+        simbolo_vencedor = PLAYER_SYMBOLS[(index + 1) % 2]
         clients.remove(client)
         client.close()
-        print(f"[DESCONECTADO] Um cliente foi removido.")
-        log_evento("Cliente removido da lista")
+        print(
+            f"Jogador {simbolo_desistente} desistiu. Vitória de {simbolo_vencedor}")
+        log_evento(
+            f"Jogador {simbolo_desistente} desistiu. Vitória de {simbolo_vencedor}")
+        broadcast(
+            f"Jogador {simbolo_desistente} desistiu. Jogador {simbolo_vencedor} venceu por desistência!\n".encode())
 
 
 def handle_client(conn, player_index):
@@ -136,6 +157,7 @@ def handle_client(conn, player_index):
             if not msg:
                 remove_client(conn)
                 return
+
             if msg.startswith("/chat "):
                 broadcast(f"[Chat de {simbolo}]: {msg[6:]}\n".encode())
                 continue
@@ -165,12 +187,25 @@ def handle_client(conn, player_index):
                 time.sleep(0.1)
                 continue
 
+            if not tem_movimentos_possiveis(simbolo):
+                broadcast(
+                    f"Jogador {simbolo} não tem movimentos disponíveis. Fim de jogo!\n".encode())
+                log_evento(
+                    f"Jogador {simbolo} não tinha movimentos possíveis. Fim de jogo.")
+                jogador_oponente = PLAYER_SYMBOLS[(
+                    PLAYER_SYMBOLS.index(simbolo) + 1) % 2]
+                broadcast(f"Jogador {jogador_oponente} venceu!\n".encode())
+                log_evento(f"Fim de jogo. Vencedor: {jogador_oponente}")
+                break
+
             conn.send("Sua vez! Digite: x1 y1 x2 y2 (ou /chat msg):\n".encode())
             msg = conn.recv(1024).decode().strip()
 
             if not msg:
                 remove_client(conn)
+                jogo_encerrado = True
                 return
+
             if msg.startswith("/chat "):
                 broadcast(f"[Chat de {simbolo}]: {msg[6:]}\n".encode())
                 continue
@@ -192,12 +227,26 @@ def handle_client(conn, player_index):
             log_evento(f"Jogador {simbolo} moveu de {x1},{y1} para {x2},{y2}")
 
             contagem = contar_pecas()
-            if contagem[PLAYER_SYMBOLS[0]] == 0 or contagem[PLAYER_SYMBOLS[1]] == 0:
-                broadcast(f"Fim de jogo! Jogador {simbolo} venceu!\n".encode())
-                log_evento(f"Fim de jogo. Vencedor: {simbolo}")
+            if contagem[PLAYER_SYMBOLS[0]] == 1 or contagem[PLAYER_SYMBOLS[1]] == 1:
+                vencedor = PLAYER_SYMBOLS[0] if contagem[PLAYER_SYMBOLS[0]
+                                                         ] > contagem[PLAYER_SYMBOLS[1]] else PLAYER_SYMBOLS[1]
+                broadcast(
+                    f"Fim de jogo! Jogador {vencedor} venceu!\n".encode())
+                log_evento(f"Fim de jogo. Vencedor: {vencedor}")
                 break
 
             jogador_atual = (jogador_atual + 1) % 2
+
+        for c in clients:
+            try:
+                c.send("Jogo encerrado. Conexão será fechada.\n".encode())
+                c.close()
+            except:
+                pass
+        clients.clear()
+        jogo_encerrado = True
+        log_evento("Conexões encerradas e jogo finalizado.")
+        return
 
     except Exception as e:
         log_evento(f"[ERRO] Jogador {simbolo}: {e}")
