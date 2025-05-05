@@ -16,53 +16,47 @@
 import socket
 import threading
 
-# Receber mensagens do Servidor
-
 
 def receive_messages(sock):
     while True:
         try:
             msg = sock.recv(1024).decode('utf-8')
-            if msg:
-                print(f"\n{msg}")
+            if not msg:
+                print("Conexão encerrada pelo servidor.")
+                break
+            print(f"\n{msg}")
         except:
-            print("Conexão encerrada pelo servidor.")
+            print("Erro ao receber mensagem. Conexão encerrada.")
             break
+    sock.close()
 
 
-def send_messages(sock, username):
-    while True:
-        msg = input()
-        if msg.lower() == "sair":
-            print("Encerrando conexão...")
-            sock.close()
-            break
-        full_msg = f"{username}: {msg}"
-        try:
-            sock.send(full_msg.encode('utf-8'))
-        except:
-            print("Erro ao enviar mensagem.")
-            break
-
-
-def main():
-    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client.connect(("localhost", 5555))
-
-    username = input("Digite seu nome de usuário: ")
-
-    threading.Thread(target=receive_messages,
-                     args=(client,), daemon=True).start()  # daemon=true para facilitar saida do programa
-
+def send_messages(sock):
     while True:
         try:
             entrada = input()
             if entrada.lower() == "sair":
-                client.close()
+                print("Encerrando conexão...")
+                sock.close()
                 break
-            client.send(entrada.encode('utf-8'))
+            sock.send(entrada.encode('utf-8'))
         except:
+            print("Erro ao enviar. Conexão encerrada.")
             break
+
+
+def main():
+    try:
+        client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client.connect(("localhost", 5555))
+        print("Conectado ao servidor.")
+    except Exception as e:
+        print(f"Erro ao conectar: {e}")
+        return
+
+    threading.Thread(target=receive_messages,
+                     args=(client,), daemon=True).start()
+    send_messages(client)
 
 
 if __name__ == "__main__":
