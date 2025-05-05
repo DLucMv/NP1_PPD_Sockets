@@ -101,116 +101,6 @@ def verificar_capturas(jogador, x, y):
         broadcast(placar.encode())
 
 
-def fase_2_movimento():
-    global jogador_atual
-    broadcast("\n--- Fase 2: Movimentação e Captura ---\n".encode())
-    log_evento("Início da Fase 2")
-
-    while True:
-        jogador = PLAYER_SYMBOLS[jogador_atual]
-        cliente = clients[jogador_atual]
-        cliente.send(
-            "Sua vez! Digite: x1 y1 x2 y2 (mover de -> para):\n".encode())
-
-        try:
-            jogada = cliente.recv(1024).decode().strip()
-
-            if not jogada:
-                log_evento(
-                    f"[DESCONECTADO] Jogador {jogador} enviou mensagem vazia.")
-                remove_client(cliente)
-                break
-
-            x1, y1, x2, y2 = map(int, jogada.split())
-
-            if not movimento_valido(x1, y1, x2, y2, jogador):
-                cliente.send("Movimento inválido. Tente novamente.\n".encode())
-                continue
-
-            tabuleiro[x1][y1] = EMPTY
-            tabuleiro[x2][y2] = jogador
-
-            verificar_capturas(jogador, x2, y2)
-
-            contagem = contar_pecas()
-            tab = imprimir_tabuleiro()
-            msg = f"\nJogador {jogador} moveu de {x1},{y1} para {x2},{y2}\n{tab}\n"
-            broadcast(msg.encode())
-            log_evento(f"{msg.strip()}")
-
-            if contagem[PLAYER_SYMBOLS[0]] == 0 or contagem[PLAYER_SYMBOLS[1]] == 0:
-                vencedor = jogador
-                broadcast(
-                    f"Fim de jogo! Jogador {vencedor} venceu!\n".encode())
-                log_evento(f"Fim de jogo. Vencedor: {vencedor}")
-                break
-
-            jogador_atual = (jogador_atual + 1) % 2
-
-        except Exception as e:
-            log_evento(f"[ERRO FASE 2] Jogador {jogador}: {e}")
-            try:
-                cliente.send(f"Erro: {e}\n".encode())
-            except:
-                log_evento(f"[DESCONECTADO] Jogador {jogador} perdeu conexão.")
-            remove_client(cliente)
-            break  # encerra a fase se o jogador sair
-
-
-def handle_client(conn, player_index):
-    global jogador_atual
-
-    simbolo = PLAYER_SYMBOLS[player_index]
-    conn.send(f"Você é o jogador {simbolo}\n".encode())
-    log_evento(f"Jogador {simbolo} conectado.")
-
-    try:
-        # Fase 1: Colocação de peças
-        while True:
-            # Sai do loop se ambos os jogadores não tiverem mais peças
-            if pecas_restantes[PLAYER_SYMBOLS[0]] == 0 and pecas_restantes[PLAYER_SYMBOLS[1]] == 0:
-                break
-            # Evitar problemas de corrida
-            if jogador_atual != player_index:
-                time.sleep(0.1)
-                continue
-
-            conn.send("Sua vez! Digite: linha coluna\n".encode())
-            data = conn.recv(1024).decode().strip()
-            if not data:
-                print(f"[DESCONECTADO] Jogador {simbolo}")
-                remove_client(conn)
-                return
-
-            try:
-                x, y = map(int, data.split())
-            except ValueError:
-                conn.send("Entrada inválida. Use: linha coluna\n".encode())
-                continue
-
-            if not posicao_valida(x, y):
-                conn.send("Posição inválida. Tente novamente.\n".encode())
-                continue
-
-            tabuleiro[x][y] = simbolo
-            pecas_restantes[simbolo] -= 1
-
-            tab = imprimir_tabuleiro()
-            msg = f"\nJogador {simbolo} colocou em {x},{y}\n{tab}\n"
-            broadcast(msg.encode())
-            log_evento(f"{msg.strip()}")
-
-            jogador_atual = (jogador_atual + 1) % 2
-
-        conn.send(
-            "Fase 1 encerrada. Aguarde o início da próxima fase...\n".encode())
-        log_evento(f"Jogador {simbolo} terminou Fase 1")
-
-    except Exception as e:
-        print(f"[ERRO] Jogador {simbolo}: {e}")
-        remove_client(conn)
-
-
 def broadcast(msg):
     for c in clients:
         try:
@@ -225,6 +115,93 @@ def remove_client(client):
         client.close()
         print(f"[DESCONECTADO] Um cliente foi removido.")
         log_evento("Cliente removido da lista")
+
+
+def handle_client(conn, player_index):
+    global jogador_atual
+    simbolo = PLAYER_SYMBOLS[player_index]
+    conn.send(f"Você é o jogador {simbolo}\n".encode())
+    log_evento(f"Jogador {simbolo} conectado.")
+
+    try:
+        # Fase 1: colocação
+        while pecas_restantes[PLAYER_SYMBOLS[0]] > 0 or pecas_restantes[PLAYER_SYMBOLS[1]] > 0:
+            if jogador_atual != player_index:
+                time.sleep(0.1)
+                continue
+
+            conn.send("Sua vez! Digite: linha coluna (ou /chat msg):\n".encode())
+            msg = conn.recv(1024).decode().strip()
+
+            if not msg:
+                remove_client(conn)
+                return
+            if msg.startswith("/chat "):
+                broadcast(f"[Chat de {simbolo}]: {msg[6:]}\n".encode())
+                continue
+
+            try:
+                x, y = map(int, msg.split())
+                if not posicao_valida(x, y):
+                    conn.send("Posição inválida. Tente novamente.\n".encode())
+                    continue
+            except:
+                conn.send("Entrada inválida. Use: linha coluna\n".encode())
+                continue
+
+            tabuleiro[x][y] = simbolo
+            pecas_restantes[simbolo] -= 1
+            broadcast(
+                f"\nJogador {simbolo} colocou em {x},{y}\n{imprimir_tabuleiro()}\n".encode())
+            log_evento(f"Jogador {simbolo} colocou em {x},{y}")
+            jogador_atual = (jogador_atual + 1) % 2
+
+        conn.send("Fase 1 encerrada. Aguarde...\n".encode())
+        log_evento(f"Jogador {simbolo} terminou Fase 1")
+
+        # Fase 2: movimento e captura
+        while True:
+            if jogador_atual != player_index:
+                time.sleep(0.1)
+                continue
+
+            conn.send("Sua vez! Digite: x1 y1 x2 y2 (ou /chat msg):\n".encode())
+            msg = conn.recv(1024).decode().strip()
+
+            if not msg:
+                remove_client(conn)
+                return
+            if msg.startswith("/chat "):
+                broadcast(f"[Chat de {simbolo}]: {msg[6:]}\n".encode())
+                continue
+
+            try:
+                x1, y1, x2, y2 = map(int, msg.split())
+                if not movimento_valido(x1, y1, x2, y2, simbolo):
+                    conn.send("Movimento inválido. Tente novamente.\n".encode())
+                    continue
+            except:
+                conn.send("Entrada inválida. Use: x1 y1 x2 y2\n".encode())
+                continue
+
+            tabuleiro[x1][y1] = EMPTY
+            tabuleiro[x2][y2] = simbolo
+            verificar_capturas(simbolo, x2, y2)
+            broadcast(
+                f"\nJogador {simbolo} moveu de {x1},{y1} para {x2},{y2}\n{imprimir_tabuleiro()}\n".encode())
+            log_evento(f"Jogador {simbolo} moveu de {x1},{y1} para {x2},{y2}")
+
+            contagem = contar_pecas()
+            if contagem[PLAYER_SYMBOLS[0]] == 0 or contagem[PLAYER_SYMBOLS[1]] == 0:
+                broadcast(f"Fim de jogo! Jogador {simbolo} venceu!\n".encode())
+                log_evento(f"Fim de jogo. Vencedor: {simbolo}")
+                break
+
+            jogador_atual = (jogador_atual + 1) % 2
+
+    except Exception as e:
+        log_evento(f"[ERRO] Jogador {simbolo}: {e}")
+        remove_client(conn)
 
 
 def start_server(host="localhost", port=5555):
@@ -245,9 +222,6 @@ def start_server(host="localhost", port=5555):
     # Aguarda até que todas as peças tenham sido colocadas
     while pecas_restantes[PLAYER_SYMBOLS[0]] > 0 or pecas_restantes[PLAYER_SYMBOLS[1]] > 0:
         time.sleep(0.1)
-
-    # Inicia a Fase 2 após todos colocarem as peças
-    fase_2_movimento()
 
 
 if __name__ == "__main__":
