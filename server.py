@@ -151,7 +151,8 @@ def handle_client(conn, player_index):
                 time.sleep(0.1)
                 continue
 
-            conn.send("Sua vez! Digite: linha coluna (ou /chat msg):\n".encode())
+            conn.send(
+                "Sua vez! Insira sua joga ou troque mensagens pelo chat:\n".encode())
             msg = conn.recv(1024).decode().strip()
 
             if not msg:
