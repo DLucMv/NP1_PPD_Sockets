@@ -152,7 +152,7 @@ def handle_client(conn, player_index):
                 continue
 
             conn.send(
-                "Sua vez! Insira sua joga ou troque mensagens pelo chat:\n".encode())
+                "Sua vez! Faça sua jogada usandos botões ou troque mensagens pelo chat:\n".encode())
             msg = conn.recv(1024).decode().strip()
 
             if not msg:
@@ -182,6 +182,8 @@ def handle_client(conn, player_index):
         conn.send("Fase 1 encerrada. Aguarde...\n".encode())
         log_evento(f"Jogador {simbolo} terminou Fase 1")
 
+        broadcast("FASE2\n".encode())
+
         # Fase 2: movimento e captura
         while True:
             if jogador_atual != player_index:
@@ -199,10 +201,11 @@ def handle_client(conn, player_index):
                 log_evento(f"Fim de jogo. Vencedor: {jogador_oponente}")
                 break
 
-            conn.send("Sua vez! Digite: x1 y1 x2 y2 (ou /chat msg):\n".encode())
+            conn.send("Sua vez! Clique: origen e destino:\n".encode())
             msg = conn.recv(1024).decode().strip()
 
             if not msg:
+                # global jogo_encerrado
                 remove_client(conn)
                 jogo_encerrado = True
                 return
@@ -217,7 +220,8 @@ def handle_client(conn, player_index):
                     conn.send("Movimento inválido. Tente novamente.\n".encode())
                     continue
             except:
-                conn.send("Entrada inválida. Use: x1 y1 x2 y2\n".encode())
+                conn.send(
+                    "Entrada inválida.\nUse: x1 y1(Origen) -> x2 y2(Destino)\n".encode())
                 continue
 
             tabuleiro[x1][y1] = EMPTY

@@ -18,15 +18,27 @@ from tkinter import messagebox
 import socket
 import threading
 
+
 cliente = None  # Socket do cliente, usado globalmente
+fase_jogo = 1  # Começa o jogo na Fase 1
+destino = None
+origem_selecionada = None
+
+
+# Melhoria de UX
+def bloquear_tabuleiro(ativo):
+    estado = tk.NORMAL if ativo else tk.DISABLED
+    for linha in tabuleiro:
+        for botao in linha:
+            botao.config(state=estado)
 
 # Função para iniciar a conexão com o servidor
 
 
 def conectar_servidor():
+    global cliente
     try:
         cliente = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        # A porta 5555 deve ser a mesma no servidor
         cliente.connect(("localhost", 5555))
         messagebox.showinfo(
             "Conectado", "Conexão estabelecida com o servidor!")
@@ -39,6 +51,7 @@ def conectar_servidor():
 
 
 def receber_mensagens(cliente):
+    global fase_jogo
     while True:
         try:
             msg = cliente.recv(1024).decode('utf-8')
@@ -47,6 +60,10 @@ def receber_mensagens(cliente):
                 break
             # Atualiza a área de mensagens com a nova mensagem
             adicionar_mensagem(msg)
+            if "FASE2" in msg:
+                fase_jogo = 2
+                adicionar_mensagem(
+                    "Início da Fase 2 - Selecione origem e destino.")
         except:
             print("Erro ao receber mensagem. Conexão encerrada.")
             break
@@ -61,7 +78,8 @@ def conectar():
                          args=(cliente,), daemon=True).start()
         entry_mensagem.config(state=tk.NORMAL)
         btn_enviar.config(state=tk.NORMAL)
-        btn_sair.config(state=tk.NORMAL)  # <-- Aqui
+        btn_sair.config(state=tk.NORMAL)
+        bloquear_tabuleiro(True)
 
 
 # Botão sair/desistir
@@ -93,16 +111,43 @@ def adicionar_mensagem(msg):
 
 # Enviar jogada para o servidor
 def clicar_botao(i, j):
-    global cliente
-    if cliente:
+    global cliente, origem_selecionada, fase_jogo
+    if not cliente:
+        adicionar_mensagem("Conecte-se ao servidor primeiro.")
+        return
+
+    if fase_jogo == 1:
         jogada = f"{i} {j}"
+        if tabuleiro_estado[i][j] != 0:
+            adicionar_mensagem("Esta célula já está ocupada.")
+            return
         try:
             cliente.send(jogada.encode('utf-8'))
-            adicionar_mensagem(f"Você jogou em ({i}, {j})")
+            adicionar_mensagem(f"Você colocou uma peça em ({i}, {j})")
         except:
             adicionar_mensagem("Erro ao enviar jogada.")
-    else:
-        adicionar_mensagem("Conecte-se ao servidor primeiro.")
+    elif fase_jogo == 2:
+        if origem_selecionada is None:
+            origem_selecionada = (i, j)
+            tabuleiro[i][j].config(bg="yellow")
+            adicionar_mensagem(f"Origem selecionada: ({i}, {j})")
+        else:
+            destino = (i, j)
+            tabuleiro[i][j].config(bg="lightgreen")
+            jogada = f"{origem_selecionada[0]} {origem_selecionada[1]} {destino[0]} {destino[1]}"
+            try:
+                cliente.send(jogada.encode('utf-8'))
+                adicionar_mensagem(
+                    f"Jogada enviada: {origem_selecionada} → {destino}")
+            except:
+                adicionar_mensagem("Erro ao enviar jogada.")
+            finally:
+                for linha in tabuleiro:
+                    for botao in linha:
+                        botao.config(bg="SystemButtonFace")
+                origem_selecionada = None
+                destino = None
+                atualizar_tabuleiro()
 
 
 # Enviar mensagem de chat pela interface
@@ -123,31 +168,34 @@ def enviar_mensagem_interface():
 tabuleiro_estado = [[0]*5 for _ in range(5)]  # 0 = vazio, 1 = X, 2 = O
 tabuleiro = []
 
+
 # Função para atualizar o tabuleiro
-
-
 def atualizar_tabuleiro():
-    for i in range(5):  # Considerando um tabuleiro 7x7
+    for i in range(5):  # Considerando um tabuleiro 5x5
         for j in range(5):
             botao = tabuleiro[i][j]
             if tabuleiro_estado[i][j] == 1:
-                botao.config(text="X", state=tk.DISABLED)
+                botao.config(text="X", state=tk.DISABLED,
+                             bg="SystemButtonFace")
             elif tabuleiro_estado[i][j] == 2:
-                botao.config(text="O", state=tk.DISABLED)
+                botao.config(text="O", state=tk.DISABLED,
+                             bg="SystemButtonFace")
             else:
-                botao.config(text="", state=tk.NORMAL)
+                botao.config(text=f"{i},{j}",
+                             state=tk.NORMAL, bg="SystemButtonFace")
 
 
 def criar_tabuleiro():
     for i in range(5):
         linha = []
         for j in range(5):
-            botao = tk.Button(tabuleiro_frame, width=5, height=2,
+            botao = tk.Button(tabuleiro_frame, width=6, height=3,
                               command=lambda i=i, j=j: clicar_botao(i, j))
             botao.grid(row=i, column=j, padx=5, pady=5)
             linha.append(botao)
         tabuleiro.append(linha)
     atualizar_tabuleiro()
+    bloquear_tabuleiro(False)
 
 
 # Janela principal
@@ -164,6 +212,7 @@ chat_area.pack(padx=10, pady=(10, 5))
 
 entry_mensagem = tk.Entry(chat_frame, width=40, state=tk.DISABLED)
 entry_mensagem.pack(side=tk.LEFT, padx=(10, 5))
+entry_mensagem.bind("<Return>", lambda e: enviar_mensagem_interface())
 
 btn_enviar = tk.Button(chat_frame, text="Enviar",
                        state=tk.DISABLED, command=enviar_mensagem_interface)
