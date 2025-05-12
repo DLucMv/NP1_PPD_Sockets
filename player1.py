@@ -189,7 +189,7 @@ def criar_tabuleiro():
     for i in range(5):
         linha = []
         for j in range(5):
-            botao = tk.Button(tabuleiro_frame, width=6, height=3,
+            botao = tk.Button(tabuleiro_frame, width=5, height=2,
                               command=lambda i=i, j=j: clicar_botao(i, j))
             botao.grid(row=i, column=j, padx=5, pady=5)
             linha.append(botao)
@@ -201,16 +201,16 @@ def criar_tabuleiro():
 # Janela principal
 root = tk.Tk()
 root.title("Jogador Seega")
-root.geometry("600x750")
+root.geometry("450x700")
 
 # Área de chat
 chat_frame = tk.Frame(root)
 chat_frame.pack(pady=10)
 
-chat_area = tk.Text(chat_frame, width=50, height=10, state=tk.DISABLED)
+chat_area = tk.Text(chat_frame, width=50, height=20, state=tk.DISABLED)
 chat_area.pack(padx=10, pady=(10, 5))
 
-entry_mensagem = tk.Entry(chat_frame, width=40, state=tk.DISABLED)
+entry_mensagem = tk.Entry(chat_frame, width=50, state=tk.DISABLED)
 entry_mensagem.pack(side=tk.LEFT, padx=(10, 5))
 entry_mensagem.bind("<Return>", lambda e: enviar_mensagem_interface())
 
